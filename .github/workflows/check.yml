@@ -1,0 +1,48 @@
+name: dsr-parse-check
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch PR title (attacker-controlled) and render dashboard body
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE=$(gh pr view 1 --repo "${{ github.repository }}" --json title --jq .title)
+          URL="https://github.com/${{ github.repository }}/pull/1"
+          {
+            echo "# Migration Dashboard"
+            echo
+            echo "## 🟡 Pending Migrations"
+            echo
+            echo "✨ no pending"
+            echo
+            echo "## 🔄 In-Progress Migrations"
+            echo
+            echo "- [ ] \`improve-test-coverage\` - Improve Test Coverage"
+            echo "  - Current step: [$TITLE]($URL)"
+            echo "  - 2 of 3 steps completed"
+            echo
+            echo "## ⏸️ Paused Migrations"
+            echo
+            echo "✨ no paused"
+            echo
+            echo "---"
+          } > /tmp/dashboard.md
+          echo "=== rendered body (marker chars shown) ==="
+          sed -n '1,40p' /tmp/dashboard.md | cat -A | sed -n '8,20p'
+
+          ISSUE_BODY=$(cat /tmp/dashboard.md)
+
+          # EXACT logic from .github/workflows/migration-dashboard.yml handle-edit
+          CHECKED_IN_PROGRESS=$(echo "$ISSUE_BODY" | awk '/## 🔄 In-Progress Migrations/,/## ⏸️ Paused Migrations/ { if (/^- \[x\]/) print }' | sed 's/^- \[x\] `//' | sed 's/`.*$//')
+
+          echo "=== extracted CHECKED_IN_PROGRESS ==="
+          printf '%s\n' "$CHECKED_IN_PROGRESS" | cat -A
+          echo "=== would dispatch (loop over unquoted words) ==="
+          for MIGRATION_ID in $CHECKED_IN_PROGRESS; do
+            echo "gh workflow run execute-migration.yml -f migration_id=$MIGRATION_ID -f step_id=<computed>"
+          done
